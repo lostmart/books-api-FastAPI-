@@ -5,3 +5,4 @@ Summary: A simple REST API for managing books
 Requires-Python: >=3.10
 Requires-Dist: fastapi>=0.115.0
 Requires-Dist: uvicorn[standard]>=0.32.0
+Requires-Dist: sqlalchemy>=2.0.0

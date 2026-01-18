@@ -1,53 +1,24 @@
-from datetime import datetime
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Depends
+from sqlalchemy.orm import Session
+
+from app.database import engine, get_db, Base
 from app.schemas.book import BookCreate, BookResponse
+from app.models.book import Book
 
 # Create the FastAPI application instance
 app = FastAPI(
     title="Books API",
-    description="A simple REST API for managing books",
-    version="0.2.0"
+    description="A simple REST API for managing books with database persistence",
+    version="0.3.0"
 )
 
-# Hardcoded data - now with timestamps and more fields
-BOOKS = [
-    {
-        "id": 1,
-        "title": "1984",
-        "author": "George Orwell",
-        "publication_year": 1949,
-        "genre": "Dystopian Fiction",
-        "isbn": "978-0451524935",
-        "description": "A dystopian social science fiction novel and cautionary tale",
-        "created_at": datetime(2024, 1, 1, 12, 0, 0),
-        "updated_at": datetime(2024, 1, 1, 12, 0, 0)
-    },
-    {
-        "id": 2,
-        "title": "To Kill a Mockingbird",
-        "author": "Harper Lee",
-        "publication_year": 1960,
-        "genre": "Southern Gothic",
-        "isbn": "978-0061120084",
-        "description": "A novel about racial injustice in the American South",
-        "created_at": datetime(2024, 1, 1, 12, 0, 0),
-        "updated_at": datetime(2024, 1, 1, 12, 0, 0)
-    },
-    {
-        "id": 3,
-        "title": "The Great Gatsby",
-        "author": "F. Scott Fitzgerald",
-        "publication_year": 1925,
-        "genre": "Literary Fiction",
-        "isbn": "978-0743273565",
-        "description": "A tragic story of Jay Gatsby and his unrequited love",
-        "created_at": datetime(2024, 1, 1, 12, 0, 0),
-        "updated_at": datetime(2024, 1, 1, 12, 0, 0)
-    }
-]
 
-# Counter for generating IDs
-next_id = 4
+# Create database tables on startup
+@app.on_event("startup")
+def on_startup():
+    """Create all database tables when the application starts"""
+    Base.metadata.create_all(bind=engine)
+    print("Database tables created successfully")
 
 
 @app.get("/")
@@ -56,71 +27,68 @@ def read_root():
     return {
         "message": "Welcome to Books API",
         "docs": "/docs",
-        "status": "running"
+        "status": "running",
+        "version": "0.3.0"
     }
 
 
 @app.get("/books", response_model=list[BookResponse])
-def get_books():
+def get_books(db: Session = Depends(get_db)):
     """
-    Get all books
+    Get all books from the database.
     
-    Returns a list of all books in the system.
+    - **db**: Database session (injected automatically)
     """
-    return BOOKS
+    books = db.query(Book).all()
+    return books
 
 
 @app.get("/books/{book_id}", response_model=BookResponse)
-def get_book(book_id: int):
+def get_book(book_id: int, db: Session = Depends(get_db)):
     """
-    Get a specific book by ID
+    Get a specific book by ID from the database.
     
     - **book_id**: The ID of the book to retrieve
+    - **db**: Database session (injected automatically)
     """
-    for book in BOOKS:
-        if book["id"] == book_id:
-            return book
+    book = db.query(Book).filter(Book.id == book_id).first()
     
-    # Proper error response with 404 status
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Book with id {book_id} not found"
-    )
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Book with id {book_id} not found"
+        )
+    
+    return book
 
 
 @app.post("/books", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
-def create_book(book: BookCreate):
+def create_book(book: BookCreate, db: Session = Depends(get_db)):
     """
-    Create a new book
+    Create a new book in the database.
     
-    - **title**: Book title (required)
-    - **author**: Book author (required)
-    - **publication_year**: Year published (required, 1000-2100)
-    - **genre**: Book genre (required)
-    - **isbn**: ISBN number (optional)
-    - **description**: Book description (optional)
+    - **book**: Book data to create
+    - **db**: Database session (injected automatically)
     """
-    global next_id
-    
     # Check if ISBN already exists
     if book.isbn:
-        for existing_book in BOOKS:
-            if existing_book.get("isbn") == book.isbn:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Book with ISBN {book.isbn} already exists"
-                )
+        existing_book = db.query(Book).filter(Book.isbn == book.isbn).first()
+        if existing_book:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Book with ISBN {book.isbn} already exists"
+            )
     
-    # Create new book with generated ID and timestamps
-    now = datetime.now()
-    new_book = {
-        "id": next_id,
-        **book.model_dump(),  # Convert Pydantic model to dict
-        "created_at": now,
-        "updated_at": now
-    }
+    # Create new book instance (SQLAlchemy model)
+    db_book = Book(**book.model_dump())
     
-    BOOKS.append(new_book)
-    next_id += 1
+    # Add to database session
+    db.add(db_book)
     
-    return new_book
+    # Commit the transaction (save to database)
+    db.commit()
+    
+    # Refresh to get the generated ID and timestamps
+    db.refresh(db_book)
+    
+    return db_book
