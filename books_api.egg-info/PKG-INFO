@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: books-api
+Version: 0.1.0
+Summary: A simple REST API for managing books
+Requires-Python: >=3.10
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: uvicorn[standard]>=0.32.0

@@ -1,0 +1,7 @@
+pyproject.toml
+app/main.py
+books_api.egg-info/PKG-INFO
+books_api.egg-info/SOURCES.txt
+books_api.egg-info/dependency_links.txt
+books_api.egg-info/requires.txt
+books_api.egg-info/top_level.txt
