@@ -2,6 +2,22 @@
 
 A production-ready REST API for managing books, built with **FastAPI** and following clean architecture principles.
 
+## 🚀 Features
+
+- **Full CRUD Operations** - Create, Read, Update, and Delete books
+- **Clean Architecture** - Three-layer architecture (Router → Service → Repository)
+- **Data Validation** - Automatic validation with Pydantic
+- **Type Safety** - Full type hints throughout the codebase
+- **Database ORM** - SQLAlchemy for database operations
+- **Comprehensive Testing** - Unit and integration tests with pytest
+- **Auto-generated Docs** - Interactive API documentation with Swagger UI
+- **ISBN Normalization** - Automatically handles ISBNs with or without hyphens
+
+## 📋 Requirements
+
+- Python 3.10 or higher
+- pip (Python package installer)
+
 ## Key Patterns
 
 1. Dependency Injection: FastAPI's Depends() for clean service/repository instantiation
