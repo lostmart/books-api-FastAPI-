@@ -1,11 +1,9 @@
-
 ## Key Patterns
 
 1. Dependency Injection: FastAPI's Depends() for clean service/repository instantiation
 2. Repository Pattern: Abstract database operations behind an interface
 3. DTO Pattern: Separate schemas for requests, responses, and database models
 4. Error Handling: Custom exceptions that map to HTTP status codes
-
 
 ## folder
 
@@ -31,6 +29,10 @@ books-api/
 │ ├── **init**.py
 │ └── books.py # API endpoints
 ├── tests/
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_api.py
+│   └── test_services.py
 ├── requirements.txt
 └── README.md
 ```

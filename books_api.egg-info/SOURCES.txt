@@ -1,11 +1,16 @@
 pyproject.toml
 app/database.py
+app/exceptions.py
 app/main.py
 app/seed.py
 app/models/__init__.py
 app/models/book.py
+app/repositories/__init__.py
+app/repositories/book_repository.py
 app/schemas/__init__.py
 app/schemas/book.py
+app/services/__init__.py
+app/services/book_service.py
 books_api.egg-info/PKG-INFO
 books_api.egg-info/SOURCES.txt
 books_api.egg-info/dependency_links.txt
