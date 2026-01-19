@@ -1,3 +1,7 @@
+# Books REST API
+
+A production-ready REST API for managing books, built with **FastAPI** and following clean architecture principles.
+
 ## Key Patterns
 
 1. Dependency Injection: FastAPI's Depends() for clean service/repository instantiation
