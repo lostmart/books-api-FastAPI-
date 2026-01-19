@@ -16,3 +16,5 @@ books_api.egg-info/SOURCES.txt
 books_api.egg-info/dependency_links.txt
 books_api.egg-info/requires.txt
 books_api.egg-info/top_level.txt
+tests/test_api.py
+tests/test_services.py
