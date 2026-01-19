@@ -4,12 +4,18 @@ from sqlalchemy.orm import Session
 from app.database import engine, get_db, Base
 from app.schemas.book import BookCreate, BookResponse
 from app.repositories.book_repository import BookRepository
+from app.services.book_service import BookService
+from app.exceptions import (
+    BookNotFoundError,
+    BookAlreadyExistsError,
+    ISBNAlreadyExistsError
+)
 
 # Create the FastAPI application instance
 app = FastAPI(
     title="Books API",
-    description="A simple REST API for managing books with repository pattern",
-    version="0.4.0"
+    description="A simple REST API for managing books with clean architecture",
+    version="0.5.0"
 )
 
 
@@ -21,18 +27,22 @@ def on_startup():
     print("Database tables created successfully")
 
 
-# Dependency to get book repository
-def get_book_repository(db: Session = Depends(get_db)) -> BookRepository:
+# Dependency to get book service
+def get_book_service(db: Session = Depends(get_db)) -> BookService:
     """
-    Dependency that provides a BookRepository instance.
+    Dependency that provides a BookService instance.
+    
+    Creates the full dependency chain:
+    Session → Repository → Service
     
     Args:
         db: Database session (injected by FastAPI)
         
     Returns:
-        BookRepository instance
+        BookService instance
     """
-    return BookRepository(db)
+    repository = BookRepository(db)
+    return BookService(repository)
 
 
 @app.get("/")
@@ -42,108 +52,94 @@ def read_root():
         "message": "Welcome to Books API",
         "docs": "/docs",
         "status": "running",
-        "version": "0.4.0"
+        "version": "0.5.0"
     }
 
 
 @app.get("/books", response_model=list[BookResponse])
-def get_books(repo: BookRepository = Depends(get_book_repository)):
+def get_books(service: BookService = Depends(get_book_service)):
     """
     Get all books from the database.
     
-    - **repo**: Book repository (injected automatically)
+    - **service**: Book service (injected automatically)
     """
-    return repo.get_all()
+    return service.get_all_books()
 
 
 @app.get("/books/{book_id}", response_model=BookResponse)
-def get_book(book_id: int, repo: BookRepository = Depends(get_book_repository)):
+def get_book(book_id: int, service: BookService = Depends(get_book_service)):
     """
     Get a specific book by ID.
     
     - **book_id**: The ID of the book to retrieve
-    - **repo**: Book repository (injected automatically)
+    - **service**: Book service (injected automatically)
     """
-    book = repo.get_by_id(book_id)
-    
-    if book is None:
+    try:
+        return service.get_book_by_id(book_id)
+    except BookNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Book with id {book_id} not found"
         )
-    
-    return book
 
 
 @app.post("/books", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
-def create_book(book: BookCreate, repo: BookRepository = Depends(get_book_repository)):
+def create_book(book: BookCreate, service: BookService = Depends(get_book_service)):
     """
     Create a new book in the database.
     
     - **book**: Book data to create
-    - **repo**: Book repository (injected automatically)
+    - **service**: Book service (injected automatically)
     """
-    # Check if ISBN already exists
-    if book.isbn:
-        existing_book = repo.get_by_isbn(book.isbn)
-        if existing_book:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Book with ISBN {book.isbn} already exists"
-            )
-    
-    return repo.create(book)
+    try:
+        return service.create_book(book)
+    except BookAlreadyExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
 
 
 @app.put("/books/{book_id}", response_model=BookResponse)
 def update_book(
     book_id: int,
     book: BookCreate,
-    repo: BookRepository = Depends(get_book_repository)
+    service: BookService = Depends(get_book_service)
 ):
     """
     Update an existing book.
     
     - **book_id**: ID of the book to update
     - **book**: New book data
-    - **repo**: Book repository (injected automatically)
+    - **service**: Book service (injected automatically)
     """
-    # Check if updating ISBN to one that already exists
-    if book.isbn:
-        existing_book = repo.get_by_isbn(book.isbn)
-        # If ISBN exists and belongs to a different book
-        if existing_book and existing_book.id != book_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Book with ISBN {book.isbn} already exists"
-            )
-    
-    updated_book = repo.update(book_id, book)
-    
-    if updated_book is None:
+    try:
+        return service.update_book(book_id, book)
+    except BookNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Book with id {book_id} not found"
         )
-    
-    return updated_book
+    except ISBNAlreadyExistsError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
 
 
 @app.delete("/books/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_book(book_id: int, repo: BookRepository = Depends(get_book_repository)):
+def delete_book(book_id: int, service: BookService = Depends(get_book_service)):
     """
     Delete a book from the database.
     
     - **book_id**: ID of the book to delete
-    - **repo**: Book repository (injected automatically)
+    - **service**: Book service (injected automatically)
     """
-    success = repo.delete(book_id)
-    
-    if not success:
+    try:
+        service.delete_book(book_id)
+        return None
+    except BookNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Book with id {book_id} not found"
         )
-    
-    # 204 No Content - successful deletion returns nothing
-    return None
