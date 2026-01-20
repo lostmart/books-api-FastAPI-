@@ -1,5 +1,8 @@
 from fastapi import FastAPI, HTTPException, status, Depends
 from sqlalchemy.orm import Session
+from contextlib import asynccontextmanager
+import os
+
 
 from app.database import engine, get_db, Base
 from app.schemas.book import BookCreate, BookResponse
@@ -11,20 +14,27 @@ from app.exceptions import (
     ISBNAlreadyExistsError
 )
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handle application startup and shutdown events"""
+    # Only create tables if not running tests (tests handle their own database setup)
+    if not os.getenv("TESTING"):
+        # Startup: Create database tables
+        Base.metadata.create_all(bind=engine)
+        print("Database tables created successfully")
+    yield
+    # Shutdown: Add any cleanup logic here if needed
+    print("Application shutting down")
+
+
 # Create the FastAPI application instance
 app = FastAPI(
     title="Books API",
     description="A simple REST API for managing books with clean architecture",
-    version="0.5.0"
+    version="0.5.0",
+    lifespan=lifespan
 )
-
-
-# Create database tables on startup
-@app.on_event("startup")
-def on_startup():
-    """Create all database tables when the application starts"""
-    Base.metadata.create_all(bind=engine)
-    print("Database tables created successfully")
 
 
 # Dependency to get book service

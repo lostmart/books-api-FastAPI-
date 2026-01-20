@@ -6,9 +6,11 @@ provides to test functions that request them.
 """
 
 import pytest
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
+from fastapi import FastAPI, Depends, HTTPException, status
 
 from app.database import Base, get_db
 from app.main import app
@@ -16,8 +18,18 @@ from app.repositories.book_repository import BookRepository
 from app.services.book_service import BookService
 
 
+# Set testing environment variable
+os.environ["TESTING"] = "1"
+
+
 # Create in-memory SQLite database for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+import tempfile
+import os
+
+# Create a temporary file for the test database to ensure shared state
+temp_db = tempfile.NamedTemporaryFile(delete=False, suffix='.db')
+temp_db.close()
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{temp_db.name}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
@@ -75,22 +87,133 @@ def client():
     # Create tables before client is used
     Base.metadata.create_all(bind=engine)
     
-    # Override the get_db dependency to use our test database
-    def override_get_db():
+    # Create a test app without lifespan handler to avoid conflicts
+    test_app = FastAPI(
+        title="Books API",
+        description="A simple REST API for managing books with clean architecture",
+        version="0.5.0"
+    )
+    
+    # Create test-specific dependency that yields a session
+    def get_test_db():
         session = TestingSessionLocal()
         try:
             yield session
         finally:
             session.close()
     
-    app.dependency_overrides[get_db] = override_get_db
+    def get_test_book_service(db = Depends(get_test_db)):
+        repository = BookRepository(db)
+        return BookService(repository)
     
-    with TestClient(app) as test_client:
+    # Copy routes from main app
+    from app.schemas.book import BookCreate, BookResponse
+    from app.exceptions import BookNotFoundError, BookAlreadyExistsError, ISBNAlreadyExistsError
+    
+    @test_app.get("/")
+    def read_root():
+        """Root endpoint - health check"""
+        return {
+            "message": "Welcome to Books API",
+            "docs": "/docs",
+            "status": "running",
+            "version": "0.5.0"
+        }
+
+    @test_app.get("/books", response_model=list[BookResponse])
+    def get_books(service = Depends(get_test_book_service)):
+        """
+        Get all books from the database.
+        
+        - **service**: Book service (injected automatically)
+        """
+        return service.get_all_books()
+
+    @test_app.get("/books/{book_id}", response_model=BookResponse)
+    def get_book(book_id: int, service = Depends(get_test_book_service)):
+        """
+        Get a specific book by ID.
+        
+        - **book_id**: The ID of the book to retrieve
+        - **service**: Book service (injected automatically)
+        """
+        try:
+            return service.get_book_by_id(book_id)
+        except BookNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Book with id {book_id} not found"
+            )
+
+    @test_app.post("/books", response_model=BookResponse, status_code=status.HTTP_201_CREATED)
+    def create_book(book: BookCreate, service = Depends(get_test_book_service)):
+        """
+        Create a new book in the database.
+        
+        - **book**: Book data to create
+        - **service**: Book service (injected automatically)
+        """
+        try:
+            return service.create_book(book)
+        except BookAlreadyExistsError as e:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(e)
+            )
+
+    @test_app.put("/books/{book_id}", response_model=BookResponse)
+    def update_book(
+        book_id: int,
+        book: BookCreate,
+        service = Depends(get_test_book_service)
+    ):
+        """
+        Update an existing book.
+        
+        - **book_id**: ID of the book to update
+        - **book**: New book data
+        - **service**: Book service (injected automatically)
+        """
+        try:
+            return service.update_book(book_id, book)
+        except BookNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Book with id {book_id} not found"
+            )
+        except ISBNAlreadyExistsError as e:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(e)
+            )
+
+    @test_app.delete("/books/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_book(book_id: int, service = Depends(get_test_book_service)):
+        """
+        Delete a book from the database.
+        
+        - **book_id**: ID of the book to delete
+        - **service**: Book service (injected automatically)
+        """
+        try:
+            service.delete_book(book_id)
+            return None
+        except BookNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Book with id {book_id} not found"
+            )
+    
+    with TestClient(test_app) as test_client:
         yield test_client
     
     # Clean up
-    app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
+    # Clean up the temporary database file
+    try:
+        os.unlink(temp_db.name)
+    except:
+        pass
 
 
 @pytest.fixture
